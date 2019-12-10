@@ -16,9 +16,12 @@ const mapDispatchToProps = (dispatch: ThunkDispatch<void, any, Action>) => ({
 
 const mergeProps = (sP, dP, oP) => {
   return {
-    title: 'Opps!',
+    title: sP.modal.title ? sP.modal.title : 'Opps!',
     buttons: [],
-    description: ['Please try again.', sP.modal.error ? sP.modal.error : '' ],
+    description: [
+      sP.modal.heading ? sP.modal.heading : 'Please try again.',
+      sP.modal.error ? sP.modal.error : '',
+    ],
     closeAction: () => dP.closeModal(),
   };
 };

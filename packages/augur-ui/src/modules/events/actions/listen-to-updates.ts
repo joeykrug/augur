@@ -28,6 +28,7 @@ import {
   handleTxSuccess,
   handleTxPending,
   handleTxFailure,
+  handleTxRelayerDown,
   handleSDKReadyEvent,
   handleTokensMintedLog,
   handleGnosisStateUpdate,
@@ -129,6 +130,7 @@ const EVENTS = {
   [TXEventName.Success]: wrapLogHandler(handleTxSuccess),
   [TXEventName.Pending]: wrapLogHandler(handleTxPending),
   [TXEventName.Failure]: wrapLogHandler(handleTxFailure),
+  [TXEventName.RelayerDown]: wrapLogHandler(handleTxRelayerDown),
 };
 
 export const listenToUpdates = (Augur: Augur<Provider>) => (
