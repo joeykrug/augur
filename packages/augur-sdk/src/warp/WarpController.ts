@@ -1,12 +1,8 @@
-import * as _ from 'lodash';
 import * as IPFS from 'ipfs';
-import { DAGNode } from 'ipld-dag-pb';
 import * as Unixfs from 'ipfs-unixfs';
+import { DAGNode } from 'ipld-dag-pb';
 
 import { DB } from '../state/db/DB';
-import {
-  MarketCreatedLog
-} from '../state/logs/types';
 
 export class WarpController {
   private static DEFAULT_NODE_TYPE = { format: 'dag-pb', hashAlg: 'sha2-256' };
@@ -25,8 +21,26 @@ export class WarpController {
 
 
   public async createAllCheckpoints() {
-    const results = await this.ipfsAddRows('/events/MarketCreated', 'market', await this.db.MarketCreated.toArray());
+    const results:{hash: string, size: string}[] = await this.ipfsAddRows('/events/MarketCreated', 'market', await this.db.MarketCreated.toArray());
+
+    const file = Unixfs.default('file');
+
+    for (let i = 0; i < results.length; i++) {
+      file.addBlockSize(results[i].size);
+    }
+
+    const omnibus = new DAGNode(file.marshal());
+    for (let i = 0; i < results.length; i++) {
+      omnibus.addLink({
+        Hash: results[i].hash,
+        Size: results[i].size
+      });
+    }
+
+    const r = await this.ipfs.dag.put(omnibus, WarpController.DEFAULT_NODE_TYPE);
+
     console.log(results);
+    console.log(r.toString());
   }
 
   private async ipfsAddChunk(data: Buffer) {
