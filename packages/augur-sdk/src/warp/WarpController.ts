@@ -41,6 +41,39 @@ export class WarpController {
 
     console.log(results);
     console.log(r.toString());
+
+    const directory = Unixfs.default('directory');
+    for (let i = 0; i < results.length; i++) {
+      directory.addBlockSize(results[i].size);
+    }
+
+    directory.addBlockSize(file.fileSize());
+    const omnibusDirectory = new DAGNode(directory.marshal());
+    for (let i = 0; i < results.length; i++) {
+      console.log(results[i]);
+      omnibusDirectory.addLink({
+        Name: `file${i}`,
+        Hash: results[i].hash,
+        Size: results[i].size
+      });
+    }
+
+    omnibusDirectory.addLink({
+      Name: 'somefile',
+      Hash: r.toString(),
+      Size: file.fileSize(),
+    });
+
+    const q = await this.ipfs.dag.put(omnibusDirectory, WarpController.DEFAULT_NODE_TYPE);
+    const otherDir = new DAGNode(Unixfs.default('directory').marshal());
+    otherDir.addLink({
+      Name: 'all-the-things',
+      Hash: q.toString(),
+      Size: 0,
+    });
+
+    const d = await this.ipfs.dag.put(otherDir, WarpController.DEFAULT_NODE_TYPE);
+    console.log(d.toString());
   }
 
   private async ipfsAddChunk(data: Buffer) {
