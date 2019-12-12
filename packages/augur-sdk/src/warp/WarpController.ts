@@ -49,7 +49,6 @@ export class WarpController {
 
   private async ipfsAddRows(path: string, id: string, rows: Array<any>) {
     const results = this.ipfs.add(rows.map((row, i) => ({
-      path: `/augur/${path}/${row[id]}`,
       content: Buffer.from(JSON.stringify(row))
     })));
 
