@@ -57,38 +57,6 @@ export class WarpController {
     return results;
   }
 
-  public async doStuffWithIpfs() {
-
-    console.log("PART DUEX");
-
-    const part2 = await this.ipfs.add([{
-      path: '/augur-two/paul',
-      content: Buffer.from("Paul is great")
-    }, {
-      path: '/augur-two/justin',
-      content: Buffer.from("And I would also say that justin is also AMAZING!!!!")
-    }]);
-
-    const file = Unixfs.default('file');
-    file.addBlockSize(part2[0].size);
-    file.addBlockSize(part2[1].size);
-
-    const omnibus = new DAGNode(file.marshal());
-    omnibus.addLink({
-      Hash: part2[0].hash,
-      Size: part2[0].size
-    });
-    omnibus.addLink({
-      Hash: part2[1].hash,
-      Size: part2[1].size
-    });
-
-    const r = await this.ipfs.dag.put(omnibus, WarpController.DEFAULT_NODE_TYPE);
-    console.log(r.toString());
-
-  }
-
-
   async addBlock(block: string[]) {
     console.log("Adding block")
     const blockData = Buffer.from(block.join("\n"));
