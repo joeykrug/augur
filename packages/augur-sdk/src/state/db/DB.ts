@@ -186,18 +186,58 @@ export class DB {
   generateSchemas() : Schemas {
     const schemas: Schemas = {};
     for (const genericEventDBDescription of this.genericEventDBDescriptions) {
-      let primaryKey = "[blockNumber+logIndex]";
+      let primaryKey = '[blockNumber+logIndex]';
       if (genericEventDBDescription.primaryKey) primaryKey = genericEventDBDescription.primaryKey;
-      const fields = [primaryKey,"blockNumber"].concat(genericEventDBDescription.indexes);
+      const fields = [primaryKey,'blockNumber'].concat(genericEventDBDescription.indexes);
       schemas[genericEventDBDescription.EventName] = fields.join(',');
     }
-    schemas["Markets"] = "market,reportingState,universe,marketCreator,timestamp,finalized,blockNumber";
-    schemas["CurrentOrders"] = "orderId,[market+open],[market+outcome+orderType],orderCreator,orderFiller,blockNumber";
-    schemas["Dispute"] = "[market+payoutNumerators],market,blockNumber";
-    schemas["ZeroXOrders"] = "orderHash, [market+outcome+orderType],blockNumber";
-    schemas["SyncStatus"] = "eventName,blockNumber,syncing";
-    schemas["Rollback"] = ",[tableName+rollbackBlockNumber]";
+    schemas['Markets'] = 'market,reportingState,universe,marketCreator,timestamp,finalized,blockNumber';
+    schemas['CurrentOrders'] = 'orderId,[market+open],[market+outcome+orderType],orderCreator,orderFiller,blockNumber';
+    schemas['Dispute'] = '[market+payoutNumerators],market,blockNumber';
+    schemas['ZeroXOrders'] = 'orderHash, [market+outcome+orderType],blockNumber';
+    schemas['SyncStatus'] = 'eventName,blockNumber,syncing';
+    schemas['Rollback'] = ',[tableName+rollbackBlockNumber]';
     return schemas;
+  }
+
+  databasesToSync() {
+    return [
+      this.CompleteSetsPurchased,
+      this.CompleteSetsSold,
+      this.DisputeCrowdsourcerContribution,
+      this.DisputeCrowdsourcerCompleted,
+      this.DisputeCrowdsourcerCreated,
+      this.DisputeCrowdsourcerRedeemed,
+      this.DisputeWindowCreated,
+      this.InitialReporterRedeemed,
+      this.InitialReportSubmitted,
+      this.InitialReporterTransferred,
+      this.MarketCreated,
+      this.MarketFinalized,
+      this.MarketMigrated,
+      this.MarketParticipantsDisavowed,
+      this.MarketTransferred,
+      this.MarketVolumeChanged,
+      this.MarketOIChanged,
+      this.OrderEvent,
+      this.ParticipationTokensRedeemed,
+      this.ProfitLossChanged,
+      this.ReportingParticipantDisavowed,
+      this.TimestampSet,
+      this.TokenBalanceChanged,
+      this.TokensMinted,
+      this.TokensTransferred,
+      this.TradingProceedsClaimed,
+      this.UniverseCreated,
+      this.UniverseForked,
+      this.TransferSingle,
+      this.TransferBatch,
+      this.ShareTokenBalanceChanged,
+      this.Markets,
+      this.Dispute,
+      this.CurrentOrders,
+      this.ZeroXOrders,
+    ]
   }
 
   /**
@@ -221,7 +261,7 @@ export class DB {
    * @param {number} blockstreamDelay Number of blocks by which blockstream is behind the blockchain
    */
   async sync(augur: Augur, chunkSize: number, blockstreamDelay: number): Promise<void> {
-    let dbSyncPromises = [];
+    const dbSyncPromises = [];
     const highestAvailableBlockNumber = await augur.provider.getBlockNumber();
 
     console.log('Syncing generic log DBs');
@@ -350,41 +390,41 @@ export class DB {
     return table.count();
   }
 
-  get CompleteSetsPurchased() { return this.dexieDB["CompleteSetsPurchased"] as Dexie.Table<CompleteSetsPurchasedLog, any>; }
-  get CompleteSetsSold() { return this.dexieDB["CompleteSetsSold"] as Dexie.Table<CompleteSetsSoldLog, any>; }
-  get DisputeCrowdsourcerContribution() { return this.dexieDB["DisputeCrowdsourcerContribution"] as Dexie.Table<DisputeCrowdsourcerContributionLog, any>; }
-  get DisputeCrowdsourcerCompleted() { return this.dexieDB["DisputeCrowdsourcerCompleted"] as Dexie.Table<DisputeCrowdsourcerCompletedLog, any>; }
-  get DisputeCrowdsourcerCreated() { return this.dexieDB["DisputeCrowdsourcerCreated"] as Dexie.Table<DisputeCrowdsourcerCreatedLog, any>; }
-  get DisputeCrowdsourcerRedeemed() { return this.dexieDB["DisputeCrowdsourcerRedeemed"] as Dexie.Table<DisputeCrowdsourcerRedeemedLog, any>; }
-  get DisputeWindowCreated() { return this.dexieDB["DisputeWindowCreated"] as Dexie.Table<DisputeWindowCreatedLog, any>; }
-  get InitialReporterRedeemed() { return this.dexieDB["InitialReporterRedeemed"] as Dexie.Table<InitialReporterRedeemedLog, any>; }
-  get InitialReportSubmitted() { return this.dexieDB["InitialReportSubmitted"] as Dexie.Table<InitialReportSubmittedLog, any>; }
-  get InitialReporterTransferred() { return this.dexieDB["InitialReporterTransferred"] as Dexie.Table<InitialReporterTransferredLog, any>; }
-  get MarketCreated() { return this.dexieDB["MarketCreated"] as Dexie.Table<MarketCreatedLog, any>; }
-  get MarketFinalized() { return this.dexieDB["MarketFinalized"] as Dexie.Table<MarketFinalizedLog, any>; }
-  get MarketMigrated() { return this.dexieDB["MarketMigrated"] as Dexie.Table<MarketMigratedLog, any>; }
-  get MarketParticipantsDisavowed() { return this.dexieDB["MarketParticipantsDisavowed"] as Dexie.Table<MarketParticipantsDisavowedLog, any>; }
-  get MarketTransferred() { return this.dexieDB["MarketTransferred"] as Dexie.Table<MarketTransferredLog, any>; }
-  get MarketVolumeChanged() { return this.dexieDB["MarketVolumeChanged"] as Dexie.Table<MarketVolumeChangedLog, any>; }
-  get MarketOIChanged() { return this.dexieDB["MarketOIChanged"] as Dexie.Table<MarketOIChangedLog, any>; }
-  get OrderEvent() { return this.dexieDB["OrderEvent"] as Dexie.Table<ParsedOrderEventLog, any>; }
-  get ParticipationTokensRedeemed() { return this.dexieDB["ParticipationTokensRedeemed"] as Dexie.Table<ParticipationTokensRedeemedLog, any>; }
-  get ProfitLossChanged() { return this.dexieDB["ProfitLossChanged"] as Dexie.Table<ProfitLossChangedLog, any>; }
-  get ReportingParticipantDisavowed() { return this.dexieDB["ReportingParticipantDisavowed"] as Dexie.Table<ReportingParticipantDisavowedLog, any>; }
-  get TimestampSet() { return this.dexieDB["TimestampSet"] as Dexie.Table<TimestampSetLog, any>; }
-  get TokenBalanceChanged() { return this.dexieDB["TokenBalanceChanged"] as Dexie.Table<TokenBalanceChangedLog, any>; }
-  get TokensMinted() { return this.dexieDB["TokensMinted"] as Dexie.Table<TokensMinted, any>; }
-  get TokensTransferred() { return this.dexieDB["TokensTransferred"] as Dexie.Table<TokensTransferredLog, any>; }
-  get TradingProceedsClaimed() { return this.dexieDB["TradingProceedsClaimed"] as Dexie.Table<TradingProceedsClaimedLog, any>; }
-  get UniverseCreated() { return this.dexieDB["UniverseCreated"] as Dexie.Table<UniverseCreatedLog, any>; }
-  get UniverseForked() { return this.dexieDB["UniverseForked"] as Dexie.Table<UniverseForkedLog, any>; }
-  get TransferSingle() { return this.dexieDB["TransferSingle"] as Dexie.Table<TransferSingleLog, any>; }
-  get TransferBatch() { return this.dexieDB["TransferBatch"] as Dexie.Table<TransferBatchLog, any>; }
-  get ShareTokenBalanceChanged() { return this.dexieDB["ShareTokenBalanceChanged"] as Dexie.Table<ShareTokenBalanceChangedLog, any>; }
-  get Markets() { return this.dexieDB["Markets"] as Dexie.Table<MarketData, any>; }
-  get Dispute() { return this.dexieDB["Dispute"] as Dexie.Table<DisputeDoc, any>; }
-  get CurrentOrders() { return this.dexieDB["CurrentOrders"] as Dexie.Table<CurrentOrder, any>; }
-  get ZeroXOrders() { return this.dexieDB["ZeroXOrders"] as Dexie.Table<StoredOrder, any>; }
+  get CompleteSetsPurchased() { return this.dexieDB.table<CompleteSetsPurchasedLog>('CompleteSetsPurchased'); }
+  get CompleteSetsSold() { return this.dexieDB.table<CompleteSetsSoldLog>('CompleteSetsSold'); }
+  get DisputeCrowdsourcerContribution() { return this.dexieDB.table<DisputeCrowdsourcerContributionLog>('DisputeCrowdsourcerContribution'); }
+  get DisputeCrowdsourcerCompleted() { return this.dexieDB.table<DisputeCrowdsourcerCompletedLog>('DisputeCrowdsourcerCompleted'); }
+  get DisputeCrowdsourcerCreated() { return this.dexieDB.table<DisputeCrowdsourcerCreatedLog>('DisputeCrowdsourcerCreated'); }
+  get DisputeCrowdsourcerRedeemed() { return this.dexieDB.table<DisputeCrowdsourcerRedeemedLog>('DisputeCrowdsourcerRedeemed'); }
+  get DisputeWindowCreated() { return this.dexieDB.table<DisputeWindowCreatedLog>('DisputeWindowCreated'); }
+  get InitialReporterRedeemed() { return this.dexieDB.table<InitialReporterRedeemedLog>('InitialReporterRedeemed'); }
+  get InitialReportSubmitted() { return this.dexieDB.table<InitialReportSubmittedLog>('InitialReportSubmitted'); }
+  get InitialReporterTransferred() { return this.dexieDB.table<InitialReporterTransferredLog>('InitialReporterTransferred'); }
+  get MarketCreated() { return this.dexieDB.table<MarketCreatedLog>('MarketCreated'); }
+  get MarketFinalized() { return this.dexieDB.table<MarketFinalizedLog>('MarketFinalized'); }
+  get MarketMigrated() { return this.dexieDB.table<MarketMigratedLog>('MarketMigrated'); }
+  get MarketParticipantsDisavowed() { return this.dexieDB.table<MarketParticipantsDisavowedLog>('MarketParticipantsDisavowed'); }
+  get MarketTransferred() { return this.dexieDB.table<MarketTransferredLog>('MarketTransferred'); }
+  get MarketVolumeChanged() { return this.dexieDB.table<MarketVolumeChangedLog>('MarketVolumeChanged'); }
+  get MarketOIChanged() { return this.dexieDB.table<MarketOIChangedLog>('MarketOIChanged'); }
+  get OrderEvent() { return this.dexieDB.table<ParsedOrderEventLog>('OrderEvent'); }
+  get ParticipationTokensRedeemed() { return this.dexieDB.table<ParticipationTokensRedeemedLog>('ParticipationTokensRedeemed'); }
+  get ProfitLossChanged() { return this.dexieDB.table<ProfitLossChangedLog>('ProfitLossChanged'); }
+  get ReportingParticipantDisavowed() { return this.dexieDB.table<ReportingParticipantDisavowedLog>('ReportingParticipantDisavowed'); }
+  get TimestampSet() { return this.dexieDB.table<TimestampSetLog>('TimestampSet'); }
+  get TokenBalanceChanged() { return this.dexieDB.table<TokenBalanceChangedLog>('TokenBalanceChanged'); }
+  get TokensMinted() { return this.dexieDB.table<TokensMinted>('TokensMinted'); }
+  get TokensTransferred() { return this.dexieDB.table<TokensTransferredLog>('TokensTransferred'); }
+  get TradingProceedsClaimed() { return this.dexieDB.table<TradingProceedsClaimedLog>('TradingProceedsClaimed'); }
+  get UniverseCreated() { return this.dexieDB.table<UniverseCreatedLog>('UniverseCreated'); }
+  get UniverseForked() { return this.dexieDB.table<UniverseForkedLog>('UniverseForked'); }
+  get TransferSingle() { return this.dexieDB.table<TransferSingleLog>('TransferSingle'); }
+  get TransferBatch() { return this.dexieDB.table<TransferBatchLog>('TransferBatch'); }
+  get ShareTokenBalanceChanged() { return this.dexieDB.table<ShareTokenBalanceChangedLog>('ShareTokenBalanceChanged'); }
+  get Markets() { return this.dexieDB.table<MarketData>('Markets'); }
+  get Dispute() { return this.dexieDB.table<DisputeDoc>('Dispute'); }
+  get CurrentOrders() { return this.dexieDB.table<CurrentOrder>('CurrentOrders'); }
+  get ZeroXOrders() { return this.dexieDB.table<StoredOrder>('ZeroXOrders'); }
 
   /**
    * Queries the Liquidity DB for hourly liquidity of markets

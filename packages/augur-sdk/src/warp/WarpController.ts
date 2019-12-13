@@ -1,3 +1,4 @@
+import Dexie from 'dexie';
 import * as IPFS from 'ipfs';
 import * as Unixfs from 'ipfs-unixfs';
 import { DAGNode } from 'ipld-dag-pb';
@@ -20,25 +21,33 @@ export class WarpController {
   }
 
   async createAllCheckpoints() {
-    const results = await this.ipfsAddRows(await this.db.MarketCreated.toArray());
-    console.log(results);
+    const otherDir = new DAGNode(Unixfs.default('directory').marshal());
+    for(const table of this.db.databasesToSync()) {
+      const r = await this.addDBToIPFS(table);
+      otherDir.addLink(r);
+    }
+
+    const d = await this.ipfs.dag.put(otherDir, WarpController.DEFAULT_NODE_TYPE);
+    console.log(d.toString());
+  }
+
+  async addDBToIPFS(table: Dexie.Table<any, any>) {
+    const results = await this.ipfsAddRows(await table.toArray());
 
     const file = Unixfs.default('file');
-
     for (let i = 0; i < results.length; i++) {
       file.addBlockSize(results[i].size);
     }
 
-    const omnibus = new DAGNode(file.marshal());
+    const indexFile = new DAGNode(file.marshal());
     for (let i = 0; i < results.length; i++) {
-      omnibus.addLink({
+      indexFile.addLink({
         Hash: results[i].hash,
         Size: results[i].size
       });
     }
 
-    const r = await this.ipfs.dag.put(omnibus, WarpController.DEFAULT_NODE_TYPE);
-    console.log(r.toString());
+    const indexFileResponse = await this.ipfs.dag.put(indexFile, WarpController.DEFAULT_NODE_TYPE);
 
     const directory = Unixfs.default('directory');
     for (let i = 0; i < results.length; i++) {
@@ -46,31 +55,28 @@ export class WarpController {
     }
 
     directory.addBlockSize(file.fileSize());
-    const omnibusDirectory = new DAGNode(directory.marshal());
+    const directoryNode = new DAGNode(directory.marshal());
     for (let i = 0; i < results.length; i++) {
-      omnibusDirectory.addLink({
+      console.log(results[i]);
+      directoryNode.addLink({
         Name: `file${i}`,
         Hash: results[i].hash,
         Size: results[i].size
       });
     }
 
-    omnibusDirectory.addLink({
+    directoryNode.addLink({
       Name: 'index',
-      Hash: r.toString(),
+      Hash: indexFileResponse.toString(),
       Size: file.fileSize(),
     });
 
-    const q = await this.ipfs.dag.put(omnibusDirectory, WarpController.DEFAULT_NODE_TYPE);
-    const otherDir = new DAGNode(Unixfs.default('directory').marshal());
-    otherDir.addLink({
-      Name: 'MarketCreated',
+    const q = await this.ipfs.dag.put(directoryNode, WarpController.DEFAULT_NODE_TYPE);
+    return {
+      Name: table.name,
       Hash: q.toString(),
       Size: 0,
-    });
-
-    const d = await this.ipfs.dag.put(otherDir, WarpController.DEFAULT_NODE_TYPE);
-    console.log(d.toString());
+    }
   }
 
   private async ipfsAddChunk(data: Buffer) {
