@@ -71,7 +71,7 @@ describe('WarpController', () => {
       - checkpoints/                            # A directory holding historical checkpoints, this can be capped at N checkpoints.
         - ${checkpoint_blocknumber}             # A directory holding data for a checkpoint as of a blocknumber
           - index                               # All checkpoint data in a serialized form consumable for clients that just need that checkpoint
-      - events                                  # A directory containing serialized forms of each table
+      - events (Rename to tables)               # A directory containing serialized forms of each table
         - CompleteSetsPurchased
         - CompleteSetsSold
         - DisputeCrowdsourcerCompleted
@@ -115,6 +115,10 @@ describe('WarpController', () => {
           expect.objectContaining({
             name: 'index',
             type: 'file',
+          }),
+          expect.objectContaining({
+            name: 'accounts',
+            type: 'dir',
           }),
           expect.objectContaining({
             name: 'checkpoints',

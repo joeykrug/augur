@@ -24,22 +24,26 @@ export class WarpController {
   }
 
   async createAllCheckpoints() {
-    const otherDir = new DAGNode(Unixfs.default('directory').marshal());
+    const topLevelDirectory = new DAGNode(Unixfs.default('directory').marshal());
     const versionFile = await this.ipfs.add({
       content: Buffer.from(WARPSYNC_VERSION),
     });
-    otherDir.addLink({
+    topLevelDirectory.addLink({
       Name: 'VERSION',
       Hash: versionFile[0].hash,
       Size: 1,
     });
 
+    topLevelDirectory.addLink(await this.buildDirectory('accounts'));
+    topLevelDirectory.addLink(await this.buildDirectory('checkpoints'));
+    topLevelDirectory.addLink(await this.buildDirectory('tables'));
+
     for(const table of this.db.databasesToSync()) {
       const r = await this.addDBToIPFS(table);
-      otherDir.addLink(r);
+      // topLevelDirectory.addLink(r);
     }
 
-    const d = await this.ipfs.dag.put(otherDir, WarpController.DEFAULT_NODE_TYPE);
+    const d = await this.ipfs.dag.put(topLevelDirectory, WarpController.DEFAULT_NODE_TYPE);
     return d.toString();
   }
 
@@ -69,7 +73,6 @@ export class WarpController {
     directory.addBlockSize(file.fileSize());
     const directoryNode = new DAGNode(directory.marshal());
     for (let i = 0; i < results.length; i++) {
-      console.log(results[i]);
       directoryNode.addLink({
         Name: `file${i}`,
         Hash: results[i].hash,
@@ -91,27 +94,19 @@ export class WarpController {
     }
   }
 
-  private async ipfsAddChunk(data: Buffer) {
-
+  private async buildDirectory(name: string) {
+    const directoryNode = new DAGNode(Unixfs.default('directory').marshal());
+    const result = await this.ipfs.dag.put(directoryNode, WarpController.DEFAULT_NODE_TYPE);
+    return {
+      Name: `${name}`,
+      Hash: result,
+      Size: 0,
+    }
   }
 
   private async ipfsAddRows(rows: any[]):Promise<{ hash: string, size: string}[]> {
     return this.ipfs.add(rows.map((row, i) => ({
       content: Buffer.from(JSON.stringify(row))
     })));
-  }
-
-  async addBlock(block: string[]) {
-    console.log("Adding block")
-    const blockData = Buffer.from(block.join("\n"));
-    return this.ipfs.add([{
-      path: '/augur-warp/chunk1',
-      content: blockData
-    }, {
-      path: '/augur-warp/chunk2',
-      content: blockData.slice(0,10005)
-    }], {
-      chunker: 'size-10000'
-    });
   }
 }
