@@ -4,6 +4,9 @@ import * as Unixfs from 'ipfs-unixfs';
 import { DAGNode } from 'ipld-dag-pb';
 
 import { DB } from '../state/db/DB';
+import { SyncableInterface } from '../state/types';
+
+export const WARPSYNC_VERSION = '1';
 
 export class WarpController {
   private static DEFAULT_NODE_TYPE = { format: 'dag-pb', hashAlg: 'sha2-256' };
@@ -17,18 +20,27 @@ export class WarpController {
     return new WarpController(db, ipfs);
   }
 
-  constructor(private db: DB, private ipfs: IPFS) {
+  constructor(private db: SyncableInterface, private ipfs: IPFS) {
   }
 
   async createAllCheckpoints() {
     const otherDir = new DAGNode(Unixfs.default('directory').marshal());
+    const versionFile = await this.ipfs.add({
+      content: Buffer.from(WARPSYNC_VERSION),
+    });
+    otherDir.addLink({
+      Name: 'VERSION',
+      Hash: versionFile[0].hash,
+      Size: 1,
+    });
+
     for(const table of this.db.databasesToSync()) {
       const r = await this.addDBToIPFS(table);
       otherDir.addLink(r);
     }
 
     const d = await this.ipfs.dag.put(otherDir, WarpController.DEFAULT_NODE_TYPE);
-    console.log(d.toString());
+    return d.toString();
   }
 
   async addDBToIPFS(table: Dexie.Table<any, any>) {

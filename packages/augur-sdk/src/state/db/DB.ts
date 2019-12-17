@@ -1,6 +1,7 @@
 import { Augur } from '../../Augur';
 import { SubscriptionEventName } from '../../constants';
 import Dexie from 'dexie';
+import { SyncableInterface } from '../types';
 import { SyncableDB } from './SyncableDB';
 import { SyncStatus } from './SyncStatus';
 //import { LiquidityDB, LiquidityLastUpdated, MarketHourlyLiquidity } from './LiquidityDB';
@@ -57,7 +58,7 @@ export interface DerivedDBConfiguration {
   idFields?: string[];
 }
 
-export class DB {
+export class DB  implements SyncableInterface {
   private networkId: number;
   private blockstreamDelay: number;
   private syncableDatabases: { [dbName: string]: SyncableDB } = {};
@@ -296,7 +297,7 @@ export class DB {
 
     //this.augur.getAugurEventEmitter().on(SubscriptionEventName.NewBlock, (args) => this.liquidityDatabase.updateLiquidity(this.augur, this, args.timestamp));
     this.augur.getAugurEventEmitter().emit(SubscriptionEventName.SDKReady, {
-      eventName: SubscriptionEventName.SDKReady,
+        eventName: SubscriptionEventName.SDKReady,
     });
   }
 
