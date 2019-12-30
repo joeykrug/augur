@@ -203,7 +203,7 @@ def pytest_configure(config):
     # register an additional marker
     config.addinivalue_line("markers", "cover: use coverage contracts")
 
-TRADING_CONTRACTS = ['CreateOrder','FillOrder','CancelOrder','Trade','Orders','ZeroXTrade','ProfitLoss','SimulateTrade']
+TRADING_CONTRACTS = ['CreateOrder','FillOrder','CancelOrder','Trade','Orders','ZeroXTrade','ProfitLoss','SimulateTrade','GnosisSafeRegistry']
 
 class ContractsFixture:
     signatures = {}
@@ -525,7 +525,7 @@ class ContractsFixture:
         self.uploadAndAddToAugur("../source/contracts/uniswap/UniswapV2Factory.sol", constructorArgs=["", 1])
 
     def initializeAllContracts(self):
-        coreContractsToInitialize = ['Time','GnosisSafeRegistry','ShareToken','WarpSync','RepPriceOracle']
+        coreContractsToInitialize = ['Time','ShareToken','WarpSync','RepPriceOracle']
         for contractName in coreContractsToInitialize:
             if getattr(self.contracts[contractName], "initialize", None):
                 self.contracts[contractName].initialize(self.contracts['Augur'].address)
@@ -668,6 +668,10 @@ class ContractsFixture:
         daiVat.cage()
         daiJoin.cage()
 
+    def sendEth(self, sender, receiver, amount):
+        tester = self.testerProvider.ethereum_tester
+        tester.send_transaction({'from': sender, 'to': receiver, 'gas': 30000, 'gas_price': 1, 'value': amount, 'data': '0x'})
+
 @pytest.fixture(scope="session")
 def fixture(request):
     return ContractsFixture(request)
@@ -712,7 +716,7 @@ def kitchenSinkSnapshot(fixture, augurInitializedSnapshot):
     yesNoMarket = fixture.createReasonableYesNoMarket(universe)
     categoricalMarket = fixture.createReasonableCategoricalMarket(universe, 3)
     categorical8Market = fixture.createReasonableCategoricalMarket(universe, 7)
-    scalarMarket = fixture.createReasonableScalarMarket(universe, 30, -10, 400000)
+    scalarMarket = fixture.createReasonableScalarMarket(universe, 30 * 10**18, -10 * 10**18, 400000)
     fixture.uploadAndAddToAugur("solidity_test_helpers/Constants.sol")
     fixture.contracts['DaiPot'].setDSR(1000000564701133626865910626) # 5% a day
 

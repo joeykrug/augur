@@ -34,7 +34,8 @@ describe('Gnosis :: ', () => {
       undefined
     );
 
-    mockGnosisRelay = new MockGnosisRelayAPI(mary);
+    mockGnosisRelay = new MockGnosisRelayAPI();
+    mockGnosisRelay.initialize(mary)
     john = await ContractAPI.userWrapper(
       ACCOUNTS[0],
       providerFork,
@@ -60,7 +61,7 @@ describe('Gnosis :: ', () => {
   describe('getOrCreateGnosisSafe method', () => {
     test('should return wallet address if it exists', async done => {
       john.augur
-        .getAugurEventEmitter()
+        .events
         .on(SubscriptionEventName.GnosisSafeStatus, payload => {
           expect(payload).toEqual(
             expect.objectContaining({
@@ -82,7 +83,7 @@ describe('Gnosis :: ', () => {
 
     test('should emit event with status if relay request was created', async done => {
       john.augur
-        .getAugurEventEmitter()
+        .events
         .on(SubscriptionEventName.GnosisSafeStatus, payload => {
           expect(payload).toEqual(
             expect.objectContaining({
@@ -96,7 +97,7 @@ describe('Gnosis :: ', () => {
           done();
         });
 
-      const result = await john.augur.gnosis.getOrCreateGnosisSafe(
+      await john.augur.gnosis.getOrCreateGnosisSafe(
         john.account.publicKey
       );
     });
@@ -129,10 +130,31 @@ describe('Gnosis :: ', () => {
     };
 
     const calculatedAddress = await john.augur.gnosis.calculateGnosisSafeAddress(
-      calculateGnosisSafeAddressParams
+      calculateGnosisSafeAddressParams.owner, safe.payment
     );
 
     expect(calculatedAddress).toEqual(safe.safe);
+  });
+
+  test('should throw error when malicious relay', async () => {
+    const fakeResponse = {
+      safe: '0x91a47e8aa8DBFb3BdceE4C852fCDC194A0337E2A',
+      setupData:
+        '0xb63e800d000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000010000000000000000000000006e968fe21894a35ba59ee8ec6f60ea0ddc3a59e500000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000575f3c652894360f4b7655379ea1eae53381e01200000000000000000000000000000000000000000000000000000000007270e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000913da4198e6be1d5f5e4a40d0667f70c0b5430eb000000000000000000000000000000000000000000000000000000000000012403d434a40000000000000000000000006e968fe21894a35ba59ee8ec6f60ea0ddc3a59e5000000000000000000000000fcaf25bf38e7c86612a25ff18cb8e09ab07c98850000000000000000000000008470f1aac60a08d2282616f19a4c52718847b847000000000000000000000000e60c9fe85aee7b4848a97271da8c86323cdfb897000000000000000000000000575f3c652894360f4b7655379ea1eae53381e012000000000000000000000000e78a332d0f96aa9a56b876c20125ba8a88619d07000000000000000000000000f265d8d30a1a2cdb9857e124010b02765c9a7c700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000',
+      paymentToken: '0x575F3c652894360F4b7655379EA1eae53381e012',
+      proxyFactory: '0xdFeF677BF5f66f3EEFf481A587c04CB58e95b92a',
+      paymentReceiver: '0xbd355a7e5a7adb23b51f54027e624bfe0e238df6',
+      masterCopy: '0x9dA930a2ca12C197e687DB22dB3fA318FD8AA60a',
+      gasPriceEstimated: '0x1',
+      gasEstimated: '0x7270e0',
+      payment: '0x7270e0',
+      callback: '0x0000000000000000000000000000000000000000'
+    };
+
+    jest.spyOn(mockGnosisRelay, 'createSafe').mockResolvedValue(fakeResponse);
+    await expect(
+      john.createGnosisSafeViaRelay(john.augur.contracts.cash.address)
+    ).rejects.toThrowError(new RegExp('Potential malicious relay'));
   });
 
   describe('make safe through relay', () => {
@@ -172,10 +194,10 @@ describe('Gnosis :: ', () => {
       const receipt = await john.provider.waitForTransaction(resp.txHash);
       expect(receipt).not.toBeNull();
 
-      john.augur.getAugurEventEmitter().emit(SubscriptionEventName.NewBlock);
+      john.augur.events.emit(SubscriptionEventName.NewBlock);
 
       john.augur
-        .getAugurEventEmitter()
+        .events
         .on(SubscriptionEventName.GnosisSafeStatus, async payload => {
           expect(payload).toMatchObject({
             status: expect.objectContaining({
@@ -194,7 +216,7 @@ describe('Gnosis :: ', () => {
 
       // Cause checkSafe to fire.
       john.augur
-        .getAugurEventEmitter()
+        .events
         .emit(SubscriptionEventName.NewBlock, {});
     });
   });

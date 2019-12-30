@@ -136,7 +136,7 @@ def test_basic_trading(contractsFixture, cash, market, universe):
     salt = 5
 
     # First we'll create a signed order
-    rawZeroXOrderData, orderHash = ZeroXTrade.createZeroXOrder(BID, fix(2), 60, market.address, YES, nullAddress, expirationTime, salt)
+    rawZeroXOrderData, orderHash = ZeroXTrade.createZeroXOrder(BID, fix(20), 60, market.address, YES, nullAddress, expirationTime, salt)
     signature = signOrder(orderHash, contractsFixture.privateKeys[0])
 
     assert zeroXExchange.isValidSignature(rawZeroXOrderData, orderHash, signature)
@@ -149,40 +149,40 @@ def test_basic_trading(contractsFixture, cash, market, universe):
     assert orderType == BID
     assert kycToken == nullAddress
 
-    fillAmount = fix(1)
+    fillAmount = fix(10)
     fingerprint = longTo32Bytes(11)
     tradeGroupId = longTo32Bytes(42)
     orders = [rawZeroXOrderData]
     signatures = [signature]
 
     # Lets take the order as another user and confirm assets are traded
-    assert cash.faucet(fix(1, 60))
-    assert cash.faucet(fix(1, 40), sender=contractsFixture.accounts[1])
-    with TokenDelta(cash, -fix(1, 60), contractsFixture.accounts[0], "Tester 0 cash not taken"):
-        with TokenDelta(cash, -fix(1, 40), contractsFixture.accounts[1], "Tester 1 cash not taken"):
+    assert cash.faucet(fix(10, 60))
+    assert cash.faucet(fix(10, 40), sender=contractsFixture.accounts[1])
+    with TokenDelta(cash, -fix(10, 60), contractsFixture.accounts[0], "Tester 0 cash not taken"):
+        with TokenDelta(cash, -fix(10, 40), contractsFixture.accounts[1], "Tester 1 cash not taken"):
             with PrintGasUsed(contractsFixture, "ZeroXTrade.trade", 0):
                 amountRemaining = ZeroXTrade.trade(fillAmount, fingerprint, tradeGroupId, orders, signatures, sender=contractsFixture.accounts[1], value=150000)
                 assert amountRemaining == 0
 
     yesShareTokenBalance = shareToken.balanceOfMarketOutcome(market.address, YES, contractsFixture.accounts[0])
     noShareTokenBalance = shareToken.balanceOfMarketOutcome(market.address, NO, contractsFixture.accounts[1])
-    assert yesShareTokenBalance == fix(1)
-    assert noShareTokenBalance == fix(1)
+    assert yesShareTokenBalance == fix(10)
+    assert noShareTokenBalance == fix(10)
 
     # Another user can fill the rest. We'll also ask to fill more than is available and see that we get back the remaining amount desired
-    assert cash.faucet(fix(1, 60))
-    assert cash.faucet(fix(1, 40), sender=contractsFixture.accounts[2])
-    amountRemaining = ZeroXTrade.trade(fillAmount + 1, fingerprint, tradeGroupId, orders, signatures, sender=contractsFixture.accounts[2], value=150000)
-    assert amountRemaining == 1
+    assert cash.faucet(fix(10, 60))
+    assert cash.faucet(fix(10, 40), sender=contractsFixture.accounts[2])
+    amountRemaining = ZeroXTrade.trade(fillAmount + 10**17, fingerprint, tradeGroupId, orders, signatures, sender=contractsFixture.accounts[2], value=150000)
+    assert amountRemaining == 10**17
 
     # The order is completely filled so further attempts to take it will result in failure
-    assert cash.faucet(fix(1, 60))
-    assert cash.faucet(fix(1, 40), sender=contractsFixture.accounts[1])
+    assert cash.faucet(fix(10, 60))
+    assert cash.faucet(fix(10, 40), sender=contractsFixture.accounts[1])
     with raises(TransactionFailed):
         ZeroXTrade.trade(fillAmount, fingerprint, tradeGroupId, orders, signatures, sender=contractsFixture.accounts[1], value=150000)
 
-    assert yesShareTokenBalance == fix(1)
-    assert noShareTokenBalance == fix(1)
+    assert yesShareTokenBalance == fix(10)
+    assert noShareTokenBalance == fix(10)
 
 def test_cancelation(contractsFixture, cash, market, universe):
     ZeroXTrade = contractsFixture.contracts['ZeroXTrade']
@@ -685,6 +685,12 @@ def test_kyc_token(contractsFixture, cash, market, universe, reputationToken):
     orders = [rawZeroXOrderData]
     signatures = [signature]
 
+    # Confirm encoding and decoding functions for the kyc token
+    assetData = ZeroXTrade.encodeAssetData(market.address, 60, YES, ASK, reputationToken.address)
+    (proxyId, tokenAddress, tokenIds, tokenValues, callbackData, kycToken) = ZeroXTrade.decodeAssetData(assetData)
+    assert tokenAddress == ZeroXTrade.address
+    assert kycToken == reputationToken.address
+
     # without the kyc token we cannot fill the order
     cash.faucet(fix('1', '60'), sender=contractsFixture.accounts[2])
     with raises(TransactionFailed):
@@ -759,14 +765,8 @@ def test_order_non_valid_market(contractsFixture, cash, market, universe):
 
     # create signed order
     badMarket = cash.address
-    rawZeroXOrderData, orderHash = ZeroXTrade.createZeroXOrder(ASK, fix(1), 60, badMarket, YES, nullAddress, expirationTime, salt, sender=contractsFixture.accounts[1])
-    signature = signOrder(orderHash, contractsFixture.privateKeys[1])
-    orders = [rawZeroXOrderData]
-    signatures = [signature]
-
-    # The TX will not succeed when the market is not a recognized market
     with raises(TransactionFailed):
-        ZeroXTrade.trade(fix(1), longTo32Bytes(11), tradeGroupID, orders, signatures, sender=contractsFixture.accounts[2], value=150000) == fix(1)
+        ZeroXTrade.createZeroXOrder(ASK, fix(1), 60, badMarket, YES, nullAddress, expirationTime, salt, sender=contractsFixture.accounts[1])
 
 def test_fill_nothing_failure(contractsFixture, cash, market, universe):
     ZeroXTrade = contractsFixture.contracts['ZeroXTrade']
@@ -789,9 +789,9 @@ def test_gnosis_safe_trade(contractsFixture, augur, cash, market, universe, gnos
     account = contractsFixture.accounts[0]
     saltNonce = 42
 
-    gnosisSafeRegistryData = gnosisSafeRegistry.callRegister_encode(gnosisSafeRegistry.address, augur.address, createOrder.address, fillOrder.address, cash.address, shareToken.address, affiliates.address, longTo32Bytes(11), nullAddress)
+    gnosisSafeRegistryData = gnosisSafeRegistry.setupForAugur_encode(augur.address, createOrder.address, fillOrder.address, cash.address, shareToken.address, affiliates.address, longTo32Bytes(11), nullAddress)
     gnosisSafeData = gnosisSafeMaster.setup_encode([account], 1, gnosisSafeRegistry.address, gnosisSafeRegistryData, nullAddress, nullAddress, 0, nullAddress)
-    gnosisSafeAddress = proxyFactory.createProxyWithNonce(gnosisSafeMaster.address, gnosisSafeData, saltNonce)
+    gnosisSafeAddress = proxyFactory.createProxyWithCallback(gnosisSafeMaster.address, gnosisSafeData, saltNonce, gnosisSafeRegistry.address)
 
     gnosisSafe = contractsFixture.applySignature("GnosisSafe", gnosisSafeAddress)
 
@@ -820,18 +820,38 @@ def test_gnosis_safe_trade(contractsFixture, augur, cash, market, universe, gnos
     orders = [rawZeroXOrderData]
     signatures = [signature]
 
-    # Lets take the order as another user and confirm assets are traded
+    # Lets take the order as another user also using a gnosis safe and confirm assets are traded
+    saltNonce = 43
+    senderAccount = contractsFixture.accounts[1]
+    gnosisSafeData2 = gnosisSafeMaster.setup_encode([senderAccount], 1, gnosisSafeRegistry.address, gnosisSafeRegistryData, nullAddress, nullAddress, 0, nullAddress)
+    gnosisSafeAddress2 = proxyFactory.createProxyWithNonce(gnosisSafeMaster.address, gnosisSafeData2, saltNonce)
+
+    gnosisSafe2 = contractsFixture.applySignature("GnosisSafe", gnosisSafeAddress2)
+
     assert cash.faucet(fix(1, 60))
     assert cash.transfer(gnosisSafeAddress, fix(1, 60))
-    assert cash.faucet(fix(1, 40), sender=contractsFixture.accounts[1])
+    assert cash.faucet(fix(1, 40))
+    assert cash.transfer(gnosisSafeAddress2, fix(1, 40))
+
     with TokenDelta(cash, -fix(1, 60), gnosisSafeAddress, "Tester 0 cash not taken"):
-        with TokenDelta(cash, -fix(1, 40), contractsFixture.accounts[1], "Tester 1 cash not taken"):
+        with TokenDelta(cash, -fix(1, 40), gnosisSafeAddress2, "Tester 1 cash not taken"):
             with PrintGasUsed(contractsFixture, "ZeroXTrade.trade", 0):
-                amountRemaining = ZeroXTrade.trade(fillAmount, fingerprint, tradeGroupId, orders, signatures, sender=contractsFixture.accounts[1], value=150000)
-                assert amountRemaining == 0
+                nonce = gnosisSafe2.nonce()
+                tradeData = ZeroXTrade.trade_encode(fillAmount, fingerprint, tradeGroupId, orders, signatures)
+                tradeTxHash = gnosisSafe2.getTransactionHash(ZeroXTrade.address, 150000, tradeData, 0, 2000000, 75000, 1, nullAddress, nullAddress, nonce)
+                key = normalize_key(contractsFixture.privateKeys[1].to_hex())
+                v, r, s = ecsign(sha3("\x19Ethereum Signed Message:\n32".encode('utf-8') + tradeTxHash), key)
+                v += 4
+                bytesv = v.to_bytes(1, "big").hex()
+                bytesr = zpad(bytearray_to_bytestr(int_to_32bytearray(r)), 32).hex()
+                bytess = zpad(bytearray_to_bytestr(int_to_32bytearray(s)), 32).hex()
+
+                gnosisSignatures = "0x" + bytesr + bytess + bytesv
+                contractsFixture.sendEth(account, gnosisSafeAddress2, 10**20)
+                gnosisSafe2.execTransaction(ZeroXTrade.address, 150000, tradeData, 0, 2000000, 75000, 1, nullAddress, nullAddress, gnosisSignatures)
 
     yesShareTokenBalance = shareToken.balanceOfMarketOutcome(market.address, YES, gnosisSafeAddress)
-    noShareTokenBalance = shareToken.balanceOfMarketOutcome(market.address, NO, contractsFixture.accounts[1])
+    noShareTokenBalance = shareToken.balanceOfMarketOutcome(market.address, NO, gnosisSafeAddress2)
     assert yesShareTokenBalance == fix(1)
     assert noShareTokenBalance == fix(1)
 
@@ -839,8 +859,8 @@ def test_gnosis_safe_trade(contractsFixture, augur, cash, market, universe, gnos
     assert cash.faucet(fix(1, 60))
     assert cash.transfer(gnosisSafeAddress, fix(1, 60))
     assert cash.faucet(fix(1, 40), sender=contractsFixture.accounts[2])
-    amountRemaining = ZeroXTrade.trade(fillAmount + 1, fingerprint, tradeGroupId, orders, signatures, sender=contractsFixture.accounts[2], value=150000)
-    assert amountRemaining == 1
+    amountRemaining = ZeroXTrade.trade(fillAmount + 10**17, fingerprint, tradeGroupId, orders, signatures, sender=contractsFixture.accounts[2], value=150000)
+    assert amountRemaining == 10**17
 
     # The order is completely filled so further attempts to take it will result in failure
     assert cash.faucet(fix(1, 60))

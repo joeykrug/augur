@@ -266,7 +266,8 @@ export class Markets {
     t.type({ marketId: t.string }),
     t.partial({
       outcomeId: t.union([outcomeIdType, t.array(outcomeIdType)]),
-      account: t.string
+      account: t.string,
+      onChain: t.boolean, // if false or not present, use 0x orderbook
     }),
   ]);
 
@@ -473,7 +474,7 @@ export class Markets {
     // Get Market docs for all markets with the specified filters
     const numMarketDocs = await db.Markets.count();
     let marketIds: string[] = [];
-    let useMarketIds = params.search || params.categories || params.userPortfolioAddress;
+    let useMarketIds = params.search || (params.categories && params.categories.length > 0) || params.userPortfolioAddress;
     let useCreator = false;
 
     if (params.search || params.categories) {
@@ -601,10 +602,19 @@ export class Markets {
     params: t.TypeOf<typeof Markets.getMarketOrderBookParams>
   ): Promise<MarketOrderBook> {
     const account = params.account;
-    const orders = await OnChainTrading.getOpenOrders(augur, db, {
-      marketId: params.marketId,
-      orderState: OrderState.OPEN,
-    });
+
+    let orders;
+    if (params.onChain) {
+      orders = await OnChainTrading.getOpenOnChainOrders(augur, db, {
+        marketId: params.marketId,
+        orderState: OrderState.OPEN,
+      });
+    } else {
+      orders = await OnChainTrading.getOpenOrders(augur, db, {
+        marketId: params.marketId,
+        orderState: OrderState.OPEN,
+      });
+    }
 
     const processOrders = (
       unsortedOrders: {
@@ -663,6 +673,7 @@ export class Markets {
       };
     };
 
+    // add sorting logic in here for by size
     const bucketAndSortOrdersByPrice = (unsortedOrders: {
       [orderId: string]: Order;
     },
@@ -1116,7 +1127,7 @@ async function getMarketsInfo(
       disputeInfo,
       disavowed: marketData.disavowed,
       template,
-      isTemplate: marketData.isTemplate,
+      isTemplate: marketData.isTemplate
     };
   });
 }

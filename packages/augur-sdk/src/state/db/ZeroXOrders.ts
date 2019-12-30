@@ -3,9 +3,13 @@ import { AbstractTable, BaseDocument } from './AbstractTable';
 import { SyncStatus } from './SyncStatus';
 import { Augur } from '../../Augur';
 import { DB } from './DB';
+import { MarketData, MarketType } from '../logs/types';
 import { OrderInfo, OrderEvent, BigNumber } from "@0x/mesh-rpc-client";
 import { getAddress } from 'ethers/utils/address';
+import { defaultAbiCoder, ParamType } from 'ethers/utils';
 import { SignedOrder } from '@0x/types';
+import { BigNumber as BN} from 'ethers/utils';
+import moment, { Moment } from 'moment';
 
 // This database clears its contents on every sync.
 // The primary purposes for even storing this data are:
@@ -14,13 +18,39 @@ import { SignedOrder } from '@0x/types';
 
 const EXPECTED_ASSET_DATA_LENGTH = 650;
 
+const DEFAULT_TRADE_INTERVAL = new BigNumber(10**17);
+const TRADE_INTERVAL_VALUE = new BigNumber(10**19);
+
+// Original ABI from Go
+// [
+//   {
+//     constant: false,
+//     inputs: [
+//       { name: 'address', type: 'address' },
+//       { name: 'ids', type: 'uint256[]' },
+//       { name: 'values', type: 'uint256[]' },
+//       { name: 'callbackData', type: 'bytes' },
+//     ],
+//     name: 'ERC1155Assets',
+//     outputs: [],
+//     payable: false,
+//     stateMutability: 'nonpayable',
+//     type: 'function',
+//   },
+// ];
+const erc1155AssetDataAbi: ParamType[] = [
+  { name: 'address', type: 'address' },
+  { name: 'ids', type: 'uint256[]' },
+  { name: 'values', type: 'uint256[]' },
+  { name: 'callbackData', type: 'bytes' },
+];
+
 export interface OrderData {
   market: string;
   price: string;
   outcome: string;
   orderType: string;
   kycToken: string;
-  exchange: string;
 }
 
 export interface Document extends BaseDocument {
@@ -35,6 +65,7 @@ export interface StoredOrder extends OrderData {
   orderHash: string,
   signedOrder: StoredSignedOrder,
   amount: string,
+  numberAmount: BigNumber,
   orderCreator: string,
 }
 
@@ -88,11 +119,15 @@ export class ZeroXOrders extends AbstractTable {
   }
 
   async handleMeshEvent(orderEvents: OrderEvent[]): Promise<void> {
+    if (orderEvents.length < 1) return;
+    console.log('Mesh events recieved: ${JSON.stringify(orderEvents)}');
     const filteredOrders = _.filter(orderEvents, this.validateOrder.bind(this));
     let documents = _.map(filteredOrders, this.processOrder.bind(this));
     documents = _.filter(documents, this.validateStoredOrder.bind(this));
     await this.bulkUpsertDocuments(documents);
-    this.augur.getAugurEventEmitter().emit('ZeroXOrders', documents);
+    for (const d of documents) {
+      this.augur.events.emit('OrderEvent', d);
+    }
   }
 
   async sync(): Promise<void> {
@@ -101,10 +136,16 @@ export class ZeroXOrders extends AbstractTable {
     if (orders.length > 0) {
       documents = _.filter(orders, this.validateOrder.bind(this));
       documents = _.map(documents, this.processOrder.bind(this));
-      documents = _.filter(documents, this.validateStoredOrder.bind(this));
+      const marketIds: string[] = _.uniq(_.map(documents, "market"));
+      const markets = _.keyBy(await this.stateDB.Markets.where("market").anyOf(marketIds).toArray(), "market");
+      documents = _.filter(documents, (document) => {
+        return this.validateStoredOrder(document, markets);
+      });
       await this.bulkUpsertDocuments(documents);
+      for (const d of documents) {
+        this.augur.events.emit('OrderEvent', d);
+      }
     }
-    this.augur.getAugurEventEmitter().emit('ZeroXOrders', {});
   }
 
   validateOrder(order: OrderInfo): boolean {
@@ -114,8 +155,24 @@ export class ZeroXOrders extends AbstractTable {
     return true;
   }
 
-  validateStoredOrder(storedOrder: StoredOrder): boolean {
-    // TODO Validate minimum order size
+  validateStoredOrder(storedOrder: StoredOrder, markets: _.Dictionary<MarketData>): boolean {
+    // Validate the order is a multiple of the recommended trade interval
+    let tradeInterval = DEFAULT_TRADE_INTERVAL;
+    const marketData = markets[storedOrder.market];
+    if (marketData && marketData.marketType == MarketType.Scalar) {
+      tradeInterval = TRADE_INTERVAL_VALUE.dividedBy(marketData.numTicks);
+    }
+    if (!storedOrder["numberAmount"].mod(tradeInterval).isEqualTo(0)) return false;
+    console.log(storedOrder.orderHash);
+    console.log("Banana");
+    if (storedOrder["numberAmount"] == new BigNumber(0)) {
+      this.table.where('orderHash').equals(storedOrder.orderHash).delete();
+      return false;
+    }
+    if (parseInt(storedOrder.signedOrder.expirationTimeSeconds) - moment.now() < 60) { 
+      this.table.where('orderHash').equals(storedOrder.orderHash).delete();
+      return false;
+    };
     return true;
   }
 
@@ -129,15 +186,15 @@ export class ZeroXOrders extends AbstractTable {
       outcome: augurOrderData.outcome,
       orderType: augurOrderData.orderType,
       kycToken: augurOrderData.kycToken,
-      exchange: augurOrderData.exchange,
       orderHash: order.orderHash,
       amount: order.fillableTakerAssetAmount.toFixed(),
-      orderCreator: signedOrder.makerAddress,
+      numberAmount: order.fillableTakerAssetAmount,
+      orderCreator: getAddress(signedOrder.makerAddress),
       signedOrder: {
         signature: signedOrder.signature,
-        senderAddress: signedOrder.senderAddress,
-        makerAddress: signedOrder.makerAddress,
-        takerAddress: signedOrder.takerAddress,
+        senderAddress: getAddress(signedOrder.senderAddress),
+        makerAddress: getAddress(signedOrder.makerAddress),
+        takerAddress: getAddress(signedOrder.takerAddress),
         makerFee: signedOrder.makerFee.toFixed(),
         takerFee: signedOrder.takerFee.toFixed(),
         makerAssetAmount: signedOrder.makerAssetAmount.toFixed(),
@@ -145,7 +202,7 @@ export class ZeroXOrders extends AbstractTable {
         makerAssetData: signedOrder.makerAssetData,
         takerAssetData: signedOrder.takerAssetData,
         salt: signedOrder.salt.toFixed(),
-        exchangeAddress: signedOrder.exchangeAddress,
+        exchangeAddress: getAddress(signedOrder.exchangeAddress),
         feeRecipientAddress: signedOrder.feeRecipientAddress,
         expirationTimeSeconds: signedOrder.expirationTimeSeconds.toFixed(),
       },
@@ -153,14 +210,34 @@ export class ZeroXOrders extends AbstractTable {
   }
 
   parseAssetData(assetData: string): OrderData {
-    const data = assetData.substr(2); // remove the 0x
-    return {
-      market: getAddress(`0x${data.substr(392, 40)}`),
-      price: `0x${data.substr(432, 20)}`,
-      outcome: `0x${data.substr(452, 2)}`,
-      orderType: `0x${data.substr(454, 2)}`,
-      kycToken: getAddress(`0x${data.substr(224, 40)}`),
-      exchange: getAddress(`0x${data.substr(288, 40)}`),
+    // Remove the first 10 characters because assetData is prefixed in 0x, and then contains a selector.
+    // Drop the selector and add back to 0x prefix so the AbiDecoder will treat it properly as hex.
+    const decoded = defaultAbiCoder.decode(erc1155AssetDataAbi, `0x${assetData.slice(10)}`);
+    const address = decoded[0] as string;
+    const ids = decoded[1] as BigNumber[];
+    const values = decoded[2] as BigNumber[];
+    const callbackData = decoded[3] as string;
+    const kycToken = getAddress(`0x${assetData.substr(-40, assetData.length)}`);
+
+    if (ids.length !== 1) {
+      throw new Error("More than one ID passed into 0x order");
     }
+
+    // No idea why the BigNumber instance returned here just wont serialize to hex
+    const tokenid = new BN(`${ids[0].toString()}`).toHexString().substr(2);
+    // From ZeroXTrade.sol
+    //  assembly {
+    //      _market := shr(96, and(_tokenId, 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF000000000000000000000000))
+    //      _price := shr(16,  and(_tokenId, 0x0000000000000000000000000000000000000000FFFFFFFFFFFFFFFFFFFF0000))
+    //      _outcome := shr(8, and(_tokenId, 0x000000000000000000000000000000000000000000000000000000000000FF00))
+    //      _type :=           and(_tokenId, 0x00000000000000000000000000000000000000000000000000000000000000FF)
+    //  }
+    return {
+      market: getAddress(`0x${tokenid.substr(0, 40)}`),
+      price: `0x${tokenid.substr(40, 20)}`,
+      outcome: `0x${tokenid.substr(60, 2)}`,
+      orderType: `0x${tokenid.substr(62, 2)}`,
+      kycToken,
+    };
   }
 }

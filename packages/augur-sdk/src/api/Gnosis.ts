@@ -1,20 +1,20 @@
 import { abi } from '@augurproject/artifacts';
 import {
+  GasStationResponse,
   GnosisSafeState,
   GnosisSafeStateReponse,
   IGnosisRelayAPI,
   SafeResponse,
-  GasStationResponse,
 } from '@augurproject/gnosis-relay-api';
 import { BigNumber } from 'bignumber.js';
 import { ContractDependenciesGnosis } from 'contract-dependencies-gnosis';
 import { Abi } from 'ethereum';
 import * as ethUtil from 'ethereumjs-util';
 import { ethers, utils as ethersUtils } from 'ethers';
+import { formatBytes32String } from 'ethers/utils';
 import { NULL_ADDRESS, Provider, SubscriptionEventName } from '..';
 import { Augur } from '../Augur';
 import { Address } from '../state/logs/types';
-import { formatBytes32String } from 'ethers/utils';
 
 export const AUGUR_GNOSIS_SAFE_NONCE = 872838000000;
 
@@ -40,9 +40,6 @@ export interface GnosisSafeStatusPayload
   txHash?: string;
 }
 
-// TODO remove when onBlock event works - see #4809
-let intervalId = null;
-
 export class Gnosis {
   constructor(
     private readonly provider: Provider,
@@ -54,7 +51,7 @@ export class Gnosis {
     // TODO this currently doesn't work - using setInterval as workaround - see #4809
     // Check safe status on new block. Possible to wait for a transfer event to show up in the DB if this is problematic.
     augur
-      .getAugurEventEmitter()
+      .events
       .on(SubscriptionEventName.NewBlock, this.onNewBlock);
 
     this.provider.storeAbiData(abi.GnosisSafe as Abi, 'GnosisSafe');
@@ -108,7 +105,7 @@ export class Gnosis {
       }
 
       this.augur
-        .getAugurEventEmitter()
+        .events
         .emit(SubscriptionEventName.GnosisSafeStatus, {
           ...s,
           status,
@@ -116,7 +113,6 @@ export class Gnosis {
 
       // Clear the "watch" when we reach a terminal safe state.
       if ([GnosisSafeState.AVAILABLE, GnosisSafeState.ERROR].includes(status.status)) {
-        clearInterval(intervalId); // No need to poll blocks anymore
         this.safesToCheck = this.safesToCheck.filter(r => s.safe !== r.safe);
       }
     }
@@ -135,7 +131,7 @@ export class Gnosis {
     const safe = await this.getGnosisSafeAddress(owner);
     if (ethersUtils.getAddress(safe) !== ethersUtils.getAddress(NULL_ADDRESS)) {
       this.augur
-        .getAugurEventEmitter()
+        .events
         .emit(SubscriptionEventName.GnosisSafeStatus, {
           status: GnosisSafeState.AVAILABLE,
           safe,
@@ -148,13 +144,13 @@ export class Gnosis {
 
     // Validate previous relay creation params.
     if (typeof params === 'object') {
-      const safe = await this.calculateGnosisSafeAddress(params);
+      const safe = await this.calculateGnosisSafeAddress(owner, params.payment);
       const status = await this.getGnosisSafeDeploymentStatusViaRelay(params);
 
       this.augur.setGnosisStatus(status.status);
 
       // Normalize addresses
-      if (safe.toLowerCase() !== params.safe.toLowerCase()) {
+      if (ethUtil.toChecksumAddress(safe) !== ethUtil.toChecksumAddress(params.safe)) {
         // TODO handle this in the UI
         console.log(
           `Saved relay safe creation params invalid. Calculated safe address is ${safe}. Passed params: ${JSON.stringify(
@@ -171,14 +167,10 @@ export class Gnosis {
           });
         }
 
-        intervalId = setInterval(() => {
-          this.onNewBlock();
-        }, 5000);
-
         return params;
       } else if (status.status === GnosisSafeState.CREATED) {
         this.augur
-          .getAugurEventEmitter()
+          .events
           .emit(SubscriptionEventName.GnosisSafeStatus, {
             status: GnosisSafeState.CREATED,
             safe: params.safe,
@@ -189,28 +181,15 @@ export class Gnosis {
     }
 
 
-    try {
-      const result: SafeResponse = await this.createGnosisSafeViaRelay({
-        owner,
-        paymentToken: this.augur.contracts.cash.address,
-      }) as SafeResponse;
+    const result: SafeResponse = await this.createGnosisSafeViaRelay({
+      owner,
+      paymentToken: this.augur.contracts.cash.address,
+    }) as SafeResponse;
 
-      intervalId = setInterval(() => {
-        this.onNewBlock();
-      }, 5000);
-
-      return {
-        ...result,
-        owner,
-      };
-    }
-    catch (restoreAddress) {
-      intervalId = setInterval(() => {
-        this.onNewBlock();
-      }, 5000);
-
-      return restoreAddress;
-    }
+    return {
+      ...result,
+      owner,
+    };
   }
 
   /**
@@ -219,14 +198,12 @@ export class Gnosis {
    * @returns {Promise<string>}
    */
   async calculateGnosisSafeAddress(
-    params: CalculateGnosisSafeAddressParams
+    owner: string,
+    payment: string,
   ): Promise<string> {
-    const gnosisSafeRegistryAddress = this.augur.contracts.gnosisSafeRegistry
-      .address;
-
     const gnosisSafeData = await this.buildGnosisSetupData(
-      params.owner,
-      params.payment
+      owner,
+      payment
     );
 
     // This _could_ be made into a constant if this ends up being a problem in any way
@@ -242,10 +219,11 @@ export class Gnosis {
       ['uint256'],
       [AUGUR_GNOSIS_SAFE_NONCE]
     );
+    const saltNonceWithCallback = ethUtil.keccak256(encodedNonce + this.augur.contracts.gnosisSafeRegistry.address.substr(2));
     const salt = ethUtil.keccak256(
       '0x' +
         ethUtil.keccak256(gnosisSafeData).toString('hex') +
-        encodedNonce.substr(2)
+        saltNonceWithCallback.toString('hex')
     );
     const initCode = proxyCreationCode + constructorData.substr(2);
 
@@ -266,19 +244,22 @@ export class Gnosis {
   }
 
   async createGnosisSafeDirectlyWithETH(account: string): Promise<string> {
+    const gnosisSafeRegistryAddress = this.augur.contracts.gnosisSafeRegistry.address;
     const gnosisSafeData = await this.buildGnosisSetupData(account);
 
     // Make transaction to proxy factory
     const nonce = AUGUR_GNOSIS_SAFE_NONCE;
-    const proxy = this.augur.contracts.proxyFactory.createProxyWithNonce_(
+    const proxy = this.augur.contracts.proxyFactory.createProxyWithCallback_(
       this.augur.contracts.gnosisSafe.address,
       gnosisSafeData,
-      new BigNumber(nonce)
+      new BigNumber(nonce),
+      gnosisSafeRegistryAddress
     );
-    await this.augur.contracts.proxyFactory.createProxyWithNonce(
+    await this.augur.contracts.proxyFactory.createProxyWithCallback(
       this.augur.contracts.gnosisSafe.address,
       gnosisSafeData,
-      new BigNumber(nonce)
+      new BigNumber(nonce),
+      gnosisSafeRegistryAddress
     );
     return proxy;
   }
@@ -290,47 +271,40 @@ export class Gnosis {
       throw new Error('No Gnosis Relay provided to Augur SDK');
     }
 
-    const gnosisSafeRegistryAddress = this.augur.contracts.gnosisSafeRegistry
-      .address;
+    const gnosisSafeRegistryAddress = this.augur.contracts.gnosisSafeRegistry.address;
 
     const setupData = await this.buildRegistrationData();
 
-    try {
-      const response = await this.gnosisRelay.createSafe({
-        saltNonce: AUGUR_GNOSIS_SAFE_NONCE,
-        owners: [params.owner],
-        threshold: 1,
-        paymentToken: params.paymentToken,
-        to: gnosisSafeRegistryAddress,
-        setupData,
-      });
+    const response = await this.gnosisRelay.createSafe({
+      saltNonce: AUGUR_GNOSIS_SAFE_NONCE,
+      owners: [params.owner],
+      threshold: 1,
+      paymentToken: params.paymentToken,
+      to: gnosisSafeRegistryAddress,
+      setupData,
+      callback: gnosisSafeRegistryAddress
+    });
 
-      this.safesToCheck.push({
-        safe: ethUtil.toChecksumAddress(response.safe),
-        owner: params.owner,
-        status: GnosisSafeState.WAITING_FOR_FUNDS,
-      });
-
-      this.augur.setGnosisStatus(GnosisSafeState.WAITING_FOR_FUNDS);
-
-      return response;
-    } catch(error) {
-      const restoreAddress = await this.calculateGnosisSafeAddress({
-        payment: '1',
-        owner: params.owner,
-        safe: null,
-        paymentToken: null,
-      });
-
-      this.safesToCheck.push({
-        safe: ethUtil.toChecksumAddress(restoreAddress),
-        owner: params.owner,
-        status: GnosisSafeState.WAITING_FOR_FUNDS,
-      });
-
-      this.augur.setGnosisStatus(GnosisSafeState.WAITING_FOR_FUNDS);
-      throw ethUtil.toChecksumAddress(restoreAddress);
+    const calculatedSafeAddress = await this.calculateGnosisSafeAddress(
+      params.owner,
+      response.payment
+    );
+    if (ethUtil.toChecksumAddress(calculatedSafeAddress) !== ethUtil.toChecksumAddress(response.safe)) {
+      this.augur.setGnosisStatus(GnosisSafeState.ERROR);
+      throw new Error(`Potential malicious relay. Returned ${response.safe}. Expected ${calculatedSafeAddress}`);
     }
+
+    this.safesToCheck.push({
+      safe: ethUtil.toChecksumAddress(response.safe),
+      owner: params.owner,
+      status: GnosisSafeState.WAITING_FOR_FUNDS,
+    });
+
+    this.augur.setGnosisStatus(GnosisSafeState.WAITING_FOR_FUNDS);
+
+    await this.onNewBlock();
+
+    return response;
   }
 
   async gasStation(): Promise<GasStationResponse> {
@@ -355,9 +329,6 @@ export class Gnosis {
   }
 
   private async buildRegistrationData() {
-    const gnosisSafeRegistryAddress = this.augur.contracts.gnosisSafeRegistry
-      .address;
-
     const cashAddress = this.augur.contracts.cash.address;
     const shareTokenAddress = this.augur.contracts.shareToken.address;
     const augurAddress = this.augur.contracts.augur.address;
@@ -369,9 +340,8 @@ export class Gnosis {
     const referralAddress = NULL_ADDRESS;
     return this.provider.encodeContractFunction(
       'GnosisSafeRegistry',
-      'callRegister',
+      'setupForAugur',
       [
-        gnosisSafeRegistryAddress,
         augurAddress,
         createOrderAddress,
         fillOrderAddress,
@@ -386,8 +356,7 @@ export class Gnosis {
 
   private async buildGnosisSetupData(account: string, payment = '0') {
     const cashAddress = this.augur.contracts.cash.address;
-    const gnosisSafeRegistryAddress = this.augur.contracts.gnosisSafeRegistry
-      .address;
+    const gnosisSafeRegistryAddress = this.augur.contracts.gnosisSafeRegistry.address;
 
     const registrationData = await this.buildRegistrationData();
     /*

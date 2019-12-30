@@ -84,7 +84,7 @@ describe('State API :: Markets :: ', () => {
       feePerCashInAttoCash: highFeePerCashInAttoCash,
       affiliateFeeDivisor,
       designatedReporter,
-      prices: [new BigNumber(0), new BigNumber(100)],
+      prices: [new BigNumber(0), new BigNumber(100).multipliedBy(10**18)],
       numTicks: new BigNumber(100),
       extraInfo: '{"categories": ["common", "scalar 1 secondary", "scalar 1 tertiary"], "description": "scalar description 1", "longDescription": "scalar longDescription 1", "_scalarDenomination": "scalar denom 1"}',
     })).address;
@@ -94,7 +94,7 @@ describe('State API :: Markets :: ', () => {
       feePerCashInAttoCash: highFeePerCashInAttoCash,
       affiliateFeeDivisor,
       designatedReporter,
-      prices: [new BigNumber(0), new BigNumber(100)],
+      prices: [new BigNumber(0), new BigNumber(100).multipliedBy(10**18)],
       numTicks: new BigNumber(100),
       extraInfo: '{"categories": ["scalar 2 primary", "scalar 2 secondary", "scalar 2 tertiary"], "description": "scalar description 2", "longDescription": "scalar longDescription 2", "_scalarDenomination": "scalar denom 2"}',
     })).address;
@@ -1376,6 +1376,7 @@ describe('State API :: Markets :: ', () => {
         const orderBook = (await api.route('getMarketOrderBook', {
           marketId: yesNoMarket.address,
           outcomeId: outcome0.toNumber(),
+          onChain: true,
         })) as MarketOrderBook;
 
         expect(orderBook.orderBook).toEqual(
@@ -1391,6 +1392,7 @@ describe('State API :: Markets :: ', () => {
         const orderBook = (await api.route('getMarketOrderBook', {
           marketId: yesNoMarket.address,
           outcomeId: [outcome0.toNumber(), outcome1.toNumber()],
+          onChain: true,
         })) as MarketOrderBook;
 
         expect(orderBook.orderBook).toEqual(
@@ -1407,6 +1409,7 @@ describe('State API :: Markets :: ', () => {
         const orderBook = (await api.route('getMarketOrderBook', {
           marketId: yesNoMarket.address,
           outcomeId: [outcome0.toNumber(), outcome1.toNumber()],
+          onChain: true,
         })) as MarketOrderBook;
 
         expect(orderBook.orderBook).toEqual(
@@ -1425,6 +1428,7 @@ describe('State API :: Markets :: ', () => {
       const orderBook = (await api.route('getMarketOrderBook', {
         marketId: yesNoMarket.address,
         account: john.account.publicKey,
+        onChain: true,
       })) as MarketOrderBook;
 
       expect(orderBook).toEqual({
@@ -1502,6 +1506,7 @@ describe('State API :: Markets :: ', () => {
       const maryApi = new API(mary.augur, db);
       const orderBook = (await maryApi.route('getMarketOrderBook', {
         marketId: yesNoMarket.address,
+        onChain: true,
       })) as MarketOrderBook;
 
       expect(orderBook).toMatchObject({

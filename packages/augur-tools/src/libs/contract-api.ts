@@ -57,6 +57,13 @@ export class ContractAPI {
     public account: Account
   ) {}
 
+  async sendEther(to: string, amount: BigNumber): Promise<void> {
+    await this.dependencies.signer.sendTransaction({
+      to,
+      value: amount.toFixed(),
+    })
+  }
+
   async approveCentralAuthority(): Promise<void> {
     const authority = this.augur.addresses.Augur;
     await this.augur.contracts.cash.approve(authority, new BigNumber(2).pow(256).minus(new BigNumber(1)));
@@ -107,7 +114,7 @@ export class ContractAPI {
       designatedReporter: this.account.publicKey,
       extraInfo: JSON.stringify({
         categories: ['flash', 'Reasonable', 'YesNo'],
-        description: 'description',
+        description: 'YesNo market description',
       }),
     });
   }
@@ -123,7 +130,7 @@ export class ContractAPI {
       designatedReporter: this.account.publicKey,
       extraInfo: JSON.stringify({
         categories: ['flash', 'Reasonable', 'Categorical'],
-        description: 'description',
+        description: 'Categorical market description',
       }),
       outcomes,
     });
@@ -142,7 +149,7 @@ export class ContractAPI {
       designatedReporter: this.account.publicKey,
       extraInfo: JSON.stringify({
         categories: ['flash', 'Reasonable', 'Scalar'],
-        description: 'description',
+        description: 'Scalar market description',
         _scalarDenomination: 'scalar denom 1',
       }),
       numTicks: new BigNumber(20000),
@@ -431,7 +438,7 @@ export class ContractAPI {
   }
 
   async getNumSharesInMarket(market: ContractInterfaces.Market, outcome: BigNumber): Promise<BigNumber> {
-    return this.augur.contracts.shareToken.balanceOfMarketOutcome_(market.address, outcome, this.account.publicKey);
+    return this.augur.contracts.shareToken.balanceOfMarketOutcome_(market.address, outcome, await this.augur.getAccount());
   }
 
   async getOrCreateCurrentDisputeWindow(initial = false): Promise<string> {
@@ -528,6 +535,7 @@ export class ContractAPI {
     let balance = await this.getCashBalance();
     const desired = balance.plus(attoCash);
     while (balance.lt(desired)) {
+      console.log(`FAUCETING. BALANCE: ${balance}. DESIRED: ${desired}`);
       await this.augur.contracts.cashFaucet.faucet(attoCash);
       balance = await this.getCashBalance();
     }
